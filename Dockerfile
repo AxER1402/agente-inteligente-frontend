@@ -6,8 +6,8 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies (use npm ci si existe package-lock, sino npm install)
-RUN npm install --legacy-peer-deps
+# Install dependencies including peer deps (react/react-dom are peerDependencies)
+RUN npm install --include=peer
 
 # Copy source code
 COPY . .
