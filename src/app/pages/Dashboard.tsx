@@ -8,6 +8,7 @@ import { motion } from 'motion/react';
 import { HandCamera } from '../components/HandCamera';
 import axios from 'axios';
 import { Link } from 'react-router';
+import API_URL from '../../config';
 
 const C = {
   mint: '#ADEBB3',
@@ -25,7 +26,7 @@ export function Dashboard() {
 
   const fetchStats = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/stats');
+      const response = await axios.get(`${API_URL}/stats`);
       setStats(response.data);
     } catch (error) {
       console.error("Error fetching stats:", error);
@@ -44,7 +45,7 @@ export function Dashboard() {
     }
 
     try {
-      const response = await axios.post('http://localhost:8000/predict', { landmarks });
+      const response = await axios.post(`${API_URL}/predict`, { landmarks });
       setCurrentLetter(response.data.prediction);
       setConfidence(response.data.confidence * 100);
     } catch (error) {

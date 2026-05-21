@@ -3,6 +3,7 @@ import { Database, Camera, Plus, Search, Download, Trash2, CheckCircle, Clock, F
 import { motion } from 'motion/react';
 import { HandCamera } from '../components/HandCamera';
 import axios from 'axios';
+import API_URL from '../../config';
 
 const C = { mint: '#ADEBB3', mintDark: '#7BCB9D', turquoise: '#6ED3CF', lightGray: '#F5F7F6' };
 
@@ -36,7 +37,7 @@ export function CollectDataset() {
 
   const fetchStats = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/stats');
+      const response = await axios.get(`${API_URL}/stats`);
       setStats(response.data);
     } catch (error) {
       console.error("Error fetching stats:", error);
@@ -51,7 +52,7 @@ export function CollectDataset() {
     if (!capturingRef.current || landmarks.length === 0) return;
 
     try {
-      await axios.post('http://localhost:8000/collect', {
+      await axios.post(`${API_URL}/collect`, {
         label: activeSignRef.current,
         landmarks: landmarks
       });
@@ -82,7 +83,7 @@ export function CollectDataset() {
   const deleteSamples = async () => {
     if (window.confirm(`¿Estás seguro de que deseas borrar todas las muestras de la letra "${activeSign}"? Esto no se puede deshacer.`)) {
       try {
-        const response = await axios.post('http://localhost:8000/delete', {
+        const response = await axios.post(`${API_URL}/delete`, {
           label: activeSign
         });
         alert(response.data.message);

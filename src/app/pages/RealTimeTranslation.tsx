@@ -3,6 +3,7 @@ import { Volume2, Trash2, Copy, Download, Maximize2, Settings2, RefreshCw } from
 import { motion, AnimatePresence } from 'motion/react';
 import { HandCamera } from '../components/HandCamera';
 import axios from 'axios';
+import API_URL from '../../config';
 
 const C = { mint: '#ADEBB3', mintDark: '#7BCB9D', turquoise: '#6ED3CF', lightGray: '#F5F7F6' };
 
@@ -15,15 +16,21 @@ export function RealTimeTranslation() {
   const [wordBuffer, setWordBuffer] = useState('');
   const [buttonProgress, setButtonProgress] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
-  
+  // --- Delete button gesture state ---
+  const [deleteProgress, setDeleteProgress] = useState(0);
+  const [isDeleteHovered, setIsDeleteHovered] = useState(false);
+  const [deleteFlash, setDeleteFlash] = useState(false);
+
   const isHoveredRef = useRef(false);
   const hoverTimerRef = useRef<any>(null);
-  
+  const isDeleteHoveredRef = useRef(false);
+  const deleteTimerRef = useRef<any>(null);
+
   // Ref para controlar la estabilidad de la detección
   const lastLetterRef = useRef('');
   const letterCountRef = useRef(0);
   const STABILITY_THRESHOLD = 15; // Número de frames seguidos para confirmar una letra
-  
+
   // Ref para controlar el tiempo sin mano
   const noHandCountRef = useRef(0);
   const NO_HAND_THRESHOLD = 30; // ~1-1.5 segundos a 20-30 FPS para autocompletar la palabra
@@ -41,7 +48,7 @@ export function RealTimeTranslation() {
     if (landmarks.length === 0) {
       setCurrentLetter('');
       setConfidence(0);
-      
+
       // Lógica de espacio al quitar la mano
       noHandCountRef.current += 1;
       if (noHandCountRef.current === NO_HAND_THRESHOLD) {
@@ -54,9 +61,9 @@ export function RealTimeTranslation() {
     noHandCountRef.current = 0;
 
     try {
-      const response = await axios.post('http://localhost:8000/predict', { landmarks });
+      const response = await axios.post(`${API_URL}/predict`, { landmarks });
       const { prediction, confidence: conf } = response.data;
-      
+
       setCurrentLetter(prediction);
       setConfidence(conf * 100);
 
@@ -97,22 +104,26 @@ export function RealTimeTranslation() {
 
   useEffect(() => {
     return () => {
-      if (hoverTimerRef.current) {
-        clearInterval(hoverTimerRef.current);
-      }
+      if (hoverTimerRef.current) clearInterval(hoverTimerRef.current);
+      if (deleteTimerRef.current) clearInterval(deleteTimerRef.current);
     };
   }, []);
 
   const handleRawLandmarks = useCallback((rawLms: any[]) => {
     if (rawLms.length === 0) {
+      // Reset TTS button
       if (isHoveredRef.current) {
         isHoveredRef.current = false;
         setIsHovered(false);
         setButtonProgress(0);
-        if (hoverTimerRef.current) {
-          clearInterval(hoverTimerRef.current);
-          hoverTimerRef.current = null;
-        }
+        if (hoverTimerRef.current) { clearInterval(hoverTimerRef.current); hoverTimerRef.current = null; }
+      }
+      // Reset delete button
+      if (isDeleteHoveredRef.current) {
+        isDeleteHoveredRef.current = false;
+        setIsDeleteHovered(false);
+        setDeleteProgress(0);
+        if (deleteTimerRef.current) { clearInterval(deleteTimerRef.current); deleteTimerRef.current = null; }
       }
       return;
     }
@@ -120,10 +131,13 @@ export function RealTimeTranslation() {
     const indexTip = rawLms[8]; // Dedo índice
     if (!indexTip) return;
 
-    // Recordar: superior izquierdo en pantalla es raw_x > 0.75 y raw_y < 0.25 (debido a la inversión de la cámara)
-    const inButton = indexTip.x > 0.75 && indexTip.y < 0.25;
+    // --- Zona TTS: esquina superior izquierda en pantalla = x > 0.75 en coords raw (cámara espejada) ---
+    const inTtsZone = indexTip.x > 0.75 && indexTip.y < 0.25;
+    // --- Zona Borrar: esquina superior derecha en pantalla = x < 0.25 en coords raw ---
+    const inDeleteZone = indexTip.x < 0.25 && indexTip.y < 0.25;
 
-    if (inButton) {
+    // -- TTS button logic --
+    if (inTtsZone) {
       if (!isHoveredRef.current) {
         isHoveredRef.current = true;
         setIsHovered(true);
@@ -140,8 +154,7 @@ export function RealTimeTranslation() {
           } else {
             setButtonProgress(prog);
           }
-        }, 50); // 1.0 segundo total
-        
+        }, 50);
         if (hoverTimerRef.current) clearInterval(hoverTimerRef.current);
         hoverTimerRef.current = interval;
       }
@@ -150,10 +163,42 @@ export function RealTimeTranslation() {
         isHoveredRef.current = false;
         setIsHovered(false);
         setButtonProgress(0);
-        if (hoverTimerRef.current) {
-          clearInterval(hoverTimerRef.current);
-          hoverTimerRef.current = null;
-        }
+        if (hoverTimerRef.current) { clearInterval(hoverTimerRef.current); hoverTimerRef.current = null; }
+      }
+    }
+
+    // -- Delete button logic --
+    if (inDeleteZone) {
+      if (!isDeleteHoveredRef.current) {
+        isDeleteHoveredRef.current = true;
+        setIsDeleteHovered(true);
+        let prog = 0;
+        const interval = setInterval(() => {
+          prog += 5;
+          if (prog >= 100) {
+            clearInterval(interval);
+            // Borrar frase completa y buffer
+            setTranslatedText('');
+            setWordBuffer('');
+            setDeleteFlash(true);
+            setTimeout(() => setDeleteFlash(false), 400);
+            prog = 0;
+            setDeleteProgress(0);
+            isDeleteHoveredRef.current = false;
+            setIsDeleteHovered(false);
+          } else {
+            setDeleteProgress(prog);
+          }
+        }, 50);
+        if (deleteTimerRef.current) clearInterval(deleteTimerRef.current);
+        deleteTimerRef.current = interval;
+      }
+    } else {
+      if (isDeleteHoveredRef.current) {
+        isDeleteHoveredRef.current = false;
+        setIsDeleteHovered(false);
+        setDeleteProgress(0);
+        if (deleteTimerRef.current) { clearInterval(deleteTimerRef.current); deleteTimerRef.current = null; }
       }
     }
   }, [speakText]);
@@ -174,7 +219,7 @@ export function RealTimeTranslation() {
           <p className="text-gray-400 dark:text-zinc-500" style={{ fontSize: '13px' }}>Reconocimiento conectado al modelo de Python</p>
         </div>
         <div className="flex items-center gap-2">
-           <button 
+          <button
             onClick={() => window.location.reload()}
             className="p-2 rounded-xl hover:bg-white dark:hover:bg-zinc-850 transition-colors">
             <RefreshCw className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
@@ -203,42 +248,62 @@ export function RealTimeTranslation() {
           <div className="p-4 flex items-center justify-center w-full">
             <div className="w-full relative rounded-2xl overflow-hidden shadow-sm">
               <HandCamera onLandmarks={handleLandmarks} onRawLandmarks={handleRawLandmarks} />
-              
-              {/* Virtual gestural TTS button */}
+
+              {/* Flash de borrado */}
+              {deleteFlash && (
+                <div className="absolute inset-0 bg-red-500/20 z-30 pointer-events-none rounded-2xl" />
+              )}
+
+              {/* Botón gestual TTS — esquina superior IZQUIERDA en pantalla */}
               <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
-                <button 
+                <button
                   onClick={speakText}
-                  className={`relative w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-300 border cursor-pointer focus:outline-none ${
-                    isHovered 
-                      ? 'bg-green-500/30 border-green-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]' 
+                  className={`relative w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-300 border cursor-pointer focus:outline-none ${isHovered
+                      ? 'bg-green-500/30 border-green-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
                       : 'bg-black/45 border-white/20 hover:bg-black/60 shadow-lg'
-                  }`}
+                    }`}
                 >
-                  {/* SVG progress ring */}
                   <svg className="absolute inset-0 w-full h-full transform -rotate-90">
-                    <circle
-                      cx="24"
-                      cy="24"
-                      r="20"
-                      stroke="rgba(255, 255, 255, 0.1)"
-                      strokeWidth="2.5"
-                      fill="transparent"
-                    />
-                    <circle
-                      cx="24"
-                      cy="24"
-                      r="20"
-                      stroke="#ADEBB3"
-                      strokeWidth="2.5"
-                      fill="transparent"
+                    <circle cx="24" cy="24" r="20" stroke="rgba(255, 255, 255, 0.1)" strokeWidth="2.5" fill="transparent" />
+                    <circle cx="24" cy="24" r="20" stroke="#ADEBB3" strokeWidth="2.5" fill="transparent"
                       strokeDasharray={2 * Math.PI * 20}
                       strokeDashoffset={2 * Math.PI * 20 * (1 - buttonProgress / 100)}
                       className="transition-all duration-75"
                     />
                   </svg>
-                  
-                  {/* Speaker icon inside */}
                   <Volume2 className={`w-5 h-5 transition-transform ${isHovered ? 'scale-110 text-[#ADEBB3]' : 'text-white'}`} />
+                </button>
+                {isHovered && (
+                  <span className="text-white text-[10px] font-bold bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">
+                    Leyendo...
+                  </span>
+                )}
+              </div>
+
+              {/* Botón gestual BORRAR — esquina superior DERECHA en pantalla */}
+              <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+                {isDeleteHovered && (
+                  <span className="text-red-300 text-[10px] font-bold bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">
+                    Borrando...
+                  </span>
+                )}
+                <button
+                  onClick={() => { setTranslatedText(''); setWordBuffer(''); }}
+                  className={`relative w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-300 border cursor-pointer focus:outline-none ${isDeleteHovered
+                      ? 'bg-red-500/30 border-red-400 shadow-[0_0_15px_rgba(239,68,68,0.4)]'
+                      : 'bg-black/45 border-white/20 hover:bg-black/60 shadow-lg'
+                    }`}
+                >
+                  {/* SVG progress ring rojo */}
+                  <svg className="absolute inset-0 w-full h-full transform -rotate-90">
+                    <circle cx="24" cy="24" r="20" stroke="rgba(255,255,255,0.1)" strokeWidth="2.5" fill="transparent" />
+                    <circle cx="24" cy="24" r="20" stroke="#f87171" strokeWidth="2.5" fill="transparent"
+                      strokeDasharray={2 * Math.PI * 20}
+                      strokeDashoffset={2 * Math.PI * 20 * (1 - deleteProgress / 100)}
+                      className="transition-all duration-75"
+                    />
+                  </svg>
+                  <Trash2 className={`w-5 h-5 transition-transform ${isDeleteHovered ? 'scale-110 text-red-400' : 'text-white'}`} />
                 </button>
               </div>
             </div>
@@ -282,15 +347,15 @@ export function RealTimeTranslation() {
           {/* Word buffer */}
           <div className="bg-white dark:bg-zinc-900 rounded-3xl p-5 shadow-sm border border-black/5 dark:border-zinc-800/80">
             <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-400 dark:text-zinc-500" style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em' }}>PALABRA EN CURSO</span>
-                  {!currentLetter && wordBuffer && (
-                    <span className="text-[#7BCB9D] animate-pulse text-[9px] font-bold">
-                      (Quita la mano para confirmar)
-                    </span>
-                  )}
-                </div>
-                <button onClick={clearBuffer} className="text-[10px] text-red-400 font-bold hover:underline">LIMPIAR</button>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 dark:text-zinc-500" style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em' }}>PALABRA EN CURSO</span>
+                {!currentLetter && wordBuffer && (
+                  <span className="text-[#7BCB9D] animate-pulse text-[9px] font-bold">
+                    (Quita la mano para confirmar)
+                  </span>
+                )}
+              </div>
+              <button onClick={clearBuffer} className="text-[10px] text-red-400 font-bold hover:underline">LIMPIAR</button>
             </div>
             <div className="flex flex-wrap gap-1.5 mb-4 min-h-[40px]">
               {wordBuffer.split('').map((ch, i) => (
@@ -298,9 +363,8 @@ export function RealTimeTranslation() {
                   key={`${ch}-${i}`}
                   initial={{ scale: 0, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
-                    i === wordBuffer.length - 1 ? 'text-white' : 'text-gray-700 dark:text-zinc-200 bg-green-500/10 dark:bg-[#ADEBB3]/10'
-                  }`}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${i === wordBuffer.length - 1 ? 'text-white' : 'text-gray-700 dark:text-zinc-200 bg-green-500/10 dark:bg-[#ADEBB3]/10'
+                    }`}
                   style={{
                     background: i === wordBuffer.length - 1
                       ? 'linear-gradient(135deg, #ADEBB3, #6ED3CF)' : undefined,
@@ -310,12 +374,12 @@ export function RealTimeTranslation() {
                 </motion.div>
               ))}
             </div>
-            <button 
-                onClick={addWordToText}
-                disabled={!wordBuffer}
-                className="w-full py-2.5 rounded-xl text-white font-bold text-xs disabled:opacity-50 transition-all cursor-pointer"
-                style={{ background: 'linear-gradient(135deg, #7BCB9D, #6ED3CF)' }}>
-                AÑADIR A FRASE
+            <button
+              onClick={addWordToText}
+              disabled={!wordBuffer}
+              className="w-full py-2.5 rounded-xl text-white font-bold text-xs disabled:opacity-50 transition-all cursor-pointer"
+              style={{ background: 'linear-gradient(135deg, #7BCB9D, #6ED3CF)' }}>
+              AÑADIR A FRASE
             </button>
           </div>
 

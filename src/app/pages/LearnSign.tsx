@@ -6,6 +6,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { HandCamera } from '../components/HandCamera';
 import axios from 'axios';
+import API_URL from '../../config';
 
 const C = { mint: '#ADEBB3', mintDark: '#7BCB9D', turquoise: '#6ED3CF', lightGray: '#F5F7F6' };
 
@@ -83,7 +84,7 @@ export function LearnSign() {
   
   const fetchReference = useCallback(async (letter: string) => {
     try {
-      const response = await axios.get(`http://localhost:8000/reference/${letter}`);
+      const response = await axios.get(`${API_URL}/reference/${letter}`);
       if (response.data.status === 'success') {
         setReferenceLandmarks(response.data.landmarks);
       } else {
@@ -135,7 +136,7 @@ export function LearnSign() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const response = await axios.get('http://localhost:8000/stats');
+      const response = await axios.get(`${API_URL}/stats`);
       setStats(response.data);
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -196,7 +197,7 @@ export function LearnSign() {
     }
 
     try {
-      const response = await axios.post('http://localhost:8000/predict', { landmarks });
+      const response = await axios.post(`${API_URL}/predict`, { landmarks });
       const { prediction, confidence: conf } = response.data;
       setCurrentLetter(prediction);
       setConfidence(conf * 100);
