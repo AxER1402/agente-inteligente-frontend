@@ -46,9 +46,9 @@ function NavItem({ item }: { item: { icon: any; label: string; path: string; exa
         style={
           isActive
             ? {
-                background: 'linear-gradient(135deg, rgba(173,235,179,0.3), rgba(110,211,207,0.1))',
-                borderLeft: `3px solid ${C.mintDark}`,
-              }
+              background: 'linear-gradient(135deg, rgba(173,235,179,0.3), rgba(110,211,207,0.1))',
+              borderLeft: `3px solid ${C.mintDark}`,
+            }
             : { borderLeft: '3px solid transparent' }
         }
       >
@@ -57,11 +57,10 @@ function NavItem({ item }: { item: { icon: any; label: string; path: string; exa
           style={{ color: isActive ? C.mintDark : '#9CA3AF' }}
         />
         <span
-          className={`text-sm truncate ${
-            isActive
-              ? 'text-gray-900 dark:text-[#ADEBB3] font-semibold'
-              : 'text-gray-500 dark:text-zinc-400 font-normal hover:text-gray-700 dark:hover:text-zinc-200'
-          }`}
+          className={`text-sm truncate ${isActive
+            ? 'text-gray-900 dark:text-[#ADEBB3] font-semibold'
+            : 'text-gray-500 dark:text-zinc-400 font-normal hover:text-gray-700 dark:hover:text-zinc-200'
+            }`}
         >
           {item.label}
         </span>
@@ -251,17 +250,6 @@ export function Layout() {
             </span>
           </div>
 
-          <div className="flex-1 max-w-xs ml-2 hidden md:block">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300 dark:text-zinc-500" />
-              <input
-                placeholder="Buscar funciones..."
-                className="w-full pl-8 pr-4 py-1.5 rounded-xl border-0 outline-none text-sm text-gray-600 dark:text-zinc-200 placeholder-gray-300 dark:placeholder-zinc-500 bg-[#F5F7F6] dark:bg-zinc-800"
-                style={{ fontSize: '13px' }}
-              />
-            </div>
-          </div>
-
           <div className="flex items-center gap-2 ml-auto">
             <div
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full"
@@ -270,9 +258,9 @@ export function Layout() {
               <Activity className="w-3 h-3" style={{ color: C.mintDark }} />
               <span className="dark:text-[#ADEBB3]">IA Activa</span>
             </div>
-            
+
             {/* Dark Mode Toggle Button */}
-            <button 
+            <button
               onClick={toggleDarkMode}
               className="p-2 rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
               title="Cambiar Tema"
@@ -283,20 +271,6 @@ export function Layout() {
                 <Moon className="w-4 h-4 text-gray-400" />
               )}
             </button>
-
-            <button className="relative p-2 rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
-              <Bell className="w-4 h-4 text-gray-400 dark:text-zinc-400" />
-              <span
-                className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2 border-white dark:border-zinc-900"
-                style={{ background: C.turquoise }}
-              />
-            </button>
-            <div
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg, #ADEBB3, #6ED3CF)', fontWeight: 700 }}
-            >
-              U
-            </div>
           </div>
         </header>
 
