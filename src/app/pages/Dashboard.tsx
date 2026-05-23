@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Volume2, Trash2, Save, Camera, Activity, Zap, Database,
   TrendingUp, RefreshCw, Play, Pause,
@@ -37,6 +37,22 @@ export function Dashboard() {
     fetchStats();
   }, []);
 
+  const wristHistoryRef = useRef<{x: number, y: number}[]>([]);
+
+  const handleRawLandmarks = useCallback((rawLms: any[]) => {
+    if (rawLms.length === 0) {
+      wristHistoryRef.current = [];
+      return;
+    }
+    const wrist = rawLms[0];
+    if (wrist) {
+      wristHistoryRef.current.push({ x: wrist.x, y: wrist.y });
+      if (wristHistoryRef.current.length > 20) {
+        wristHistoryRef.current.shift();
+      }
+    }
+  }, []);
+
   const handleLandmarks = useCallback(async (landmarks: number[]) => {
     if (!cameraActive || landmarks.length === 0) {
       setCurrentLetter('');
@@ -46,8 +62,38 @@ export function Dashboard() {
 
     try {
       const response = await axios.post(`${API_URL}/predict`, { landmarks });
-      setCurrentLetter(response.data.prediction);
-      setConfidence(response.data.confidence * 100);
+      let { prediction, confidence } = response.data;
+
+      // --- APLICAR HEURÍSTICA DE MOVIMIENTO ---
+      const history = wristHistoryRef.current;
+      if (history.length >= 15) {
+        const start = history[0];
+        const end = history[history.length - 1];
+        
+        const dy = end.y - start.y;
+        const dx = end.x - start.x;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        const xs = history.map(p => p.x);
+        const max_x = Math.max(...xs);
+        const min_x = Math.min(...xs);
+
+        if (prediction === 'I' || prediction === 'J') {
+          if (dy > 0.08 && dist > 0.1) prediction = 'J';
+          else prediction = 'I';
+        } else if (prediction === 'D' || prediction === 'Z') {
+          if (dist > 0.15) prediction = 'Z';
+          else prediction = 'D';
+        } else if (prediction === 'X' || prediction === 'Q') {
+          if (dy > 0.05) prediction = 'X';
+        } else if (prediction === 'N' || prediction === 'Ñ') {
+          if ((max_x - min_x) > 0.06) prediction = 'Ñ';
+          else prediction = 'N';
+        }
+      }
+
+      setCurrentLetter(prediction);
+      setConfidence(confidence * 100);
     } catch (error) {
       // Silently fail to avoid console spam in dashboard
     }
@@ -125,7 +171,7 @@ export function Dashboard() {
           </div>
           <div className="p-4 flex items-center justify-center">
             <div className="w-full rounded-2xl overflow-hidden">
-              {cameraActive ? <HandCamera onLandmarks={handleLandmarks} /> : (
+              {cameraActive ? <HandCamera onLandmarks={handleLandmarks} onRawLandmarks={handleRawLandmarks} /> : (
                  <div className="w-full aspect-square flex items-center justify-center bg-black text-white font-bold rounded-2xl">Cámara Pausada</div>
               )}
             </div>

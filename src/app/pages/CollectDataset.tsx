@@ -95,7 +95,7 @@ export function CollectDataset() {
     }
   };
 
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  const alphabet = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ'.split('');
   const filtered = alphabet.filter(l => l.includes(searchQuery.toUpperCase()));
 
   return (

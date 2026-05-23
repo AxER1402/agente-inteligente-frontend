@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { HandCamera } from '../components/HandCamera';
 import axios from 'axios';
 import API_URL from '../../config';
+import { useUser } from '../context/UserContext';
 
 const C = { mint: '#ADEBB3', mintDark: '#7BCB9D', turquoise: '#6ED3CF', lightGray: '#F5F7F6' };
 
@@ -25,6 +26,7 @@ const SIGN_GUIDE: Record<string, { desc: string; difficulty: 'Fácil' | 'Medio' 
   L: { desc: 'Forma una "L" extendiendo el dedo índice hacia arriba y el pulgar hacia un lado en un ángulo de 90 grados.', difficulty: 'Fácil', fingers: 'Índice arriba, pulgar al lado.' },
   M: { desc: 'Cierra el puño y coloca el pulgar metido por debajo de los dedos índice, medio y anular, asomándose entre el anular y el meñique.', difficulty: 'Medio', fingers: 'Puño con pulgar bajo 3 dedos.' },
   N: { desc: 'Cierra el puño y coloca el pulgar por debajo de los dedos índice y medio, asomándose entre el medio y el anular.', difficulty: 'Fácil', fingers: 'Puño con pulgar bajo 2 dedos.' },
+  Ñ: { desc: 'Misma posición que la N, pero moviendo o balanceando la mano de lado a lado.', difficulty: 'Medio', fingers: 'Igual que la N pero con movimiento horizontal.' },
   O: { desc: 'Curva todos tus dedos hasta que sus puntas toquen la punta del pulgar, formando una circunferencia o letra "O" perfecta.', difficulty: 'Fácil', fingers: 'Todos los dedos en círculo tocando el pulgar.' },
   P: { desc: 'Apunta con el índice y medio hacia abajo en forma de "V", con el pulgar apoyado entre ambos en el dedo medio.', difficulty: 'Difícil', fingers: 'K invertida apuntando hacia abajo.' },
   Q: { desc: 'Apunta con la mano hacia abajo formando una pinza abierta horizontal con el índice y el pulgar (versión hacia abajo de la G).', difficulty: 'Medio', fingers: 'Índice y pulgar hacia abajo en pinza.' },
@@ -75,6 +77,7 @@ const getScaledPoints = (pts: { x: number; y: number }[], size = 140, padding = 
 };
 
 export function LearnSign() {
+  const { currentUser } = useUser();
   const [activeLetter, setActiveLetter] = useState('A');
   const [searchQuery, setSearchQuery] = useState('');
   const [stats, setStats] = useState<{ total_samples: number; labels: Record<string, number> }>({ total_samples: 0, labels: {} });
@@ -106,6 +109,7 @@ export function LearnSign() {
   const activeLetterRef = useRef(activeLetter);
   const holdProgressRef = useRef(0);
   const isMatchingRef = useRef(false);
+  const wristHistoryRef = useRef<{x: number, y: number}[]>([]);
 
   useEffect(() => {
     activeLetterRef.current = activeLetter;
@@ -120,19 +124,23 @@ export function LearnSign() {
   // Load stats and progress from localStorage
   const loadProgress = useCallback(() => {
     try {
-      const stored = localStorage.getItem('signai_mastered_letters');
+      // Clear state first when changing users
+      setMasteredLetters(new Set());
+      setStreak(0);
+      
+      const stored = localStorage.getItem(`signai_mastered_letters_${currentUser}`);
       if (stored) {
         setMasteredLetters(new Set(JSON.parse(stored)));
       }
       
-      const storedStreak = localStorage.getItem('signai_streak');
+      const storedStreak = localStorage.getItem(`signai_streak_${currentUser}`);
       if (storedStreak) {
         setStreak(parseInt(storedStreak, 10));
       }
     } catch (e) {
       console.error('Error loading progress:', e);
     }
-  }, []);
+  }, [currentUser]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -156,14 +164,14 @@ export function LearnSign() {
     setMasteredLetters(prev => {
       const next = new Set(prev);
       next.add(letter);
-      localStorage.setItem('signai_mastered_letters', JSON.stringify(Array.from(next)));
+      localStorage.setItem(`signai_mastered_letters_${currentUser}`, JSON.stringify(Array.from(next)));
       return next;
     });
 
     // Streak logic
     const today = new Date().toDateString();
-    const lastStreakDate = localStorage.getItem('signai_last_streak_date');
-    let currentStreak = parseInt(localStorage.getItem('signai_streak') || '0', 10);
+    const lastStreakDate = localStorage.getItem(`signai_last_streak_date_${currentUser}`);
+    let currentStreak = parseInt(localStorage.getItem(`signai_streak_${currentUser}`) || '0', 10);
     
     if (lastStreakDate !== today) {
       if (lastStreakDate === new Date(Date.now() - 86400000).toDateString()) {
@@ -171,8 +179,8 @@ export function LearnSign() {
       } else if (!lastStreakDate) {
         currentStreak = 1;
       }
-      localStorage.setItem('signai_streak', currentStreak.toString());
-      localStorage.setItem('signai_last_streak_date', today);
+      localStorage.setItem(`signai_streak_${currentUser}`, currentStreak.toString());
+      localStorage.setItem(`signai_last_streak_date_${currentUser}`, today);
       setStreak(currentStreak);
     }
 
@@ -182,6 +190,20 @@ export function LearnSign() {
     isMatchingRef.current = false;
     setIsMatching(false);
   };
+
+  const handleRawLandmarks = useCallback((rawLms: any[]) => {
+    if (rawLms.length === 0) {
+      wristHistoryRef.current = [];
+      return;
+    }
+    const wrist = rawLms[0];
+    if (wrist) {
+      wristHistoryRef.current.push({ x: wrist.x, y: wrist.y });
+      if (wristHistoryRef.current.length > 20) {
+        wristHistoryRef.current.shift();
+      }
+    }
+  }, []);
 
   const handleLandmarks = useCallback(async (landmarks: number[]) => {
     if (landmarks.length === 0) {
@@ -198,7 +220,36 @@ export function LearnSign() {
 
     try {
       const response = await axios.post(`${API_URL}/predict`, { landmarks });
-      const { prediction, confidence: conf } = response.data;
+      let { prediction, confidence: conf } = response.data;
+
+      // --- APLICAR HEURÍSTICA DE MOVIMIENTO ---
+      const history = wristHistoryRef.current;
+      if (history.length >= 15) {
+        const start = history[0];
+        const end = history[history.length - 1];
+        
+        const dy = end.y - start.y;
+        const dx = end.x - start.x;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        const xs = history.map(p => p.x);
+        const max_x = Math.max(...xs);
+        const min_x = Math.min(...xs);
+
+        if (prediction === 'I' || prediction === 'J') {
+          if (dy > 0.08 && dist > 0.1) prediction = 'J';
+          else prediction = 'I';
+        } else if (prediction === 'D' || prediction === 'Z') {
+          if (dist > 0.15) prediction = 'Z';
+          else prediction = 'D';
+        } else if (prediction === 'X' || prediction === 'Q') {
+          if (dy > 0.05) prediction = 'X';
+        } else if (prediction === 'N' || prediction === 'Ñ') {
+          if ((max_x - min_x) > 0.06) prediction = 'Ñ';
+          else prediction = 'N';
+        }
+      }
+
       setCurrentLetter(prediction);
       setConfidence(conf * 100);
 
@@ -241,9 +292,9 @@ export function LearnSign() {
 
   const handleResetProgress = () => {
     if (window.confirm('¿Seguro que quieres borrar tu progreso y empezar de nuevo?')) {
-      localStorage.removeItem('signai_mastered_letters');
-      localStorage.removeItem('signai_streak');
-      localStorage.removeItem('signai_last_streak_date');
+      localStorage.removeItem(`signai_mastered_letters_${currentUser}`);
+      localStorage.removeItem(`signai_streak_${currentUser}`);
+      localStorage.removeItem(`signai_last_streak_date_${currentUser}`);
       setMasteredLetters(new Set());
       setStreak(0);
       setShowCelebration(false);
@@ -410,7 +461,7 @@ export function LearnSign() {
             {/* Practice view (Webcam container) */}
             <div className="p-4 flex items-center justify-center relative">
               <div className="w-full max-w-[340px] relative rounded-2xl overflow-hidden shadow-sm">
-                <HandCamera onLandmarks={handleLandmarks} compact />
+                <HandCamera onLandmarks={handleLandmarks} onRawLandmarks={handleRawLandmarks} compact />
                 
                 {/* Hold circular countdown overlay */}
                 {isMatching && (

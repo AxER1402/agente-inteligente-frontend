@@ -14,6 +14,7 @@ export function RealTimeTranslation() {
   const [confidence, setConfidence] = useState(0);
   const [translatedText, setTranslatedText] = useState('');
   const [wordBuffer, setWordBuffer] = useState('');
+  const wristHistoryRef = useRef<{x: number, y: number}[]>([]);
   const [buttonProgress, setButtonProgress] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   // --- Delete button gesture state ---
@@ -62,7 +63,35 @@ export function RealTimeTranslation() {
 
     try {
       const response = await axios.post(`${API_URL}/predict`, { landmarks });
-      const { prediction, confidence: conf } = response.data;
+      let { prediction, confidence: conf } = response.data;
+
+      // --- APLICAR HEURÍSTICA DE MOVIMIENTO ---
+      const history = wristHistoryRef.current;
+      if (history.length >= 15) {
+        const start = history[0];
+        const end = history[history.length - 1];
+        
+        const dy = end.y - start.y;
+        const dx = end.x - start.x;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        const xs = history.map(p => p.x);
+        const max_x = Math.max(...xs);
+        const min_x = Math.min(...xs);
+
+        if (prediction === 'I' || prediction === 'J') {
+          if (dy > 0.08 && dist > 0.1) prediction = 'J';
+          else prediction = 'I';
+        } else if (prediction === 'D' || prediction === 'Z') {
+          if (dist > 0.15) prediction = 'Z';
+          else prediction = 'D';
+        } else if (prediction === 'X' || prediction === 'Q') {
+          if (dy > 0.05) prediction = 'X';
+        } else if (prediction === 'N' || prediction === 'Ñ') {
+          if ((max_x - min_x) > 0.06) prediction = 'Ñ';
+          else prediction = 'N';
+        }
+      }
 
       setCurrentLetter(prediction);
       setConfidence(conf * 100);
@@ -111,6 +140,7 @@ export function RealTimeTranslation() {
 
   const handleRawLandmarks = useCallback((rawLms: any[]) => {
     if (rawLms.length === 0) {
+      wristHistoryRef.current = [];
       // Reset TTS button
       if (isHoveredRef.current) {
         isHoveredRef.current = false;
@@ -129,6 +159,15 @@ export function RealTimeTranslation() {
     }
 
     const indexTip = rawLms[8]; // Dedo índice
+    const wrist = rawLms[0];    // Muñeca
+
+    if (wrist) {
+      wristHistoryRef.current.push({ x: wrist.x, y: wrist.y });
+      if (wristHistoryRef.current.length > 20) {
+        wristHistoryRef.current.shift();
+      }
+    }
+
     if (!indexTip) return;
 
     // --- Zona TTS: esquina superior izquierda en pantalla = x > 0.75 en coords raw (cámara espejada) ---
